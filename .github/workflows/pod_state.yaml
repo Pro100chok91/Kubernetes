@@ -1,19 +1,61 @@
 name: Check Kubernetes Pod Status
 
-on:
- push:
-  branches:
-   - main
-
+on: [push , workflow_dispatch]
 
 jobs:
  check-pod-status:
-  runs-on: self-hosted
-
+  runs-on: ubuntu-latest
+  outputs:
+   bads: ${{ steps.check.outputs.FAILED }}
   steps:
-   - name: Checkout code
-     uses: actions/checkout@v2
+    - uses: actions/checkout@v2
+    - name: connect via proxy and execute commands
+      id: connect
+      uses: appleboy/ssh-action@v1.1.0
+      with:
+        proxy_host: ${{ secrets.PROXY_IP }}
+        proxy_port: ${{ secrets.PROXY_PORT }}
+        proxy_username: ${{ secrets.PROXY_USER }}
+        proxy_password: ${{ secrets.PROXY_PASS }}
+        host: ${{ secrets.CLUSTER_IP }}
+        port: ${{ secrets.CLUSTER_PORT }}
+        username: ${{ secrets.CLUSTER_USER }}
+        password: ${{ secrets.CLUSTER_PASS }}
+#        script: |
+#         kubectl get pods -A > output.log
+#          bad=$(kubectl get pods -A  | awk 'NR!=1 {print $4}' | grep -v 'Running' | wc -l)
+#          echo "Number of bad pods = $bad"
+#          echo "FAILED=$bad" >> $env:GITHUB_ENV
+#          echo "FAILED=$bad" >> $env:GITHUB_OUTPUT
+    - name: check pods
+      id: check
+      run: |
+       kubectl get pods -A > output.log
+          bad=$(kubectl get pods -A  | awk 'NR!=1 {print $4}' | grep -v 'Running' | wc -l)
+          echo "Number of bad pods = $bad"
+          echo "FAILED=$bad" >> $GITHUB_ENV
+          echo "FAILED=$bad" >> $GITHUB_OUTPUT
 
-   - name: Check pod status
-     run: |
-       kubectl get pods --namespace fubuntu-default
+
+ check:
+  runs-on: ubuntu-latest
+  needs: check-pod-status
+  steps:
+   - env:
+      out1: ${{ needs.check-pod-status.outputs.bads }}
+     run: echo "$out1"
+
+ notification:
+    needs: check-pod-status
+    runs-on: ubuntu-latest
+    if: needs.check-pod-status.outputs.bads != 0
+    steps:
+    - name: Slack Notification
+      uses: rtCamp/action-slack-notify@v2
+      env:
+        SLACK_CHANNEL: project
+        SLACK_COLOR: ${{ job.status }}
+        SLACK_MESSAGE: "Cluster has bad pod"
+        SLACK_TITLE: K8s status
+        SLACK_USERNAME: GitHub
+        SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}

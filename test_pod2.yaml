@@ -1,13 +1,10 @@
 kind: Pod
 apiVersion: v1
 metadata:
-  name: good-pod
+  name: bad-pod
   labels:
     app: fubuntu
 spec:
   containers:
   - image: ghcr.io/pro100chok91/fubuntu:latest
-    command:
-      - "sleep"
-      - "604800"
     name: fubuntu
