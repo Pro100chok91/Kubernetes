@@ -6,7 +6,8 @@ jobs:
  check-pod-status:
   runs-on: ubuntu-latest
   outputs:
-   bads: ${{ steps.connect.outputs.FAILED }}
+   bads: ${{ steps.check.outputs.FAILED }}
+   fall: ${{ steps.connect.outputs.FALL }}
   steps:
     - uses: actions/checkout@v2
     - name: connect via proxy and execute commands
@@ -23,8 +24,11 @@ jobs:
         password: ${{ secrets.CLUSTER_PASS }}
         script: |
          kubectl get pods -A > output.log
-         bad=$(kubectl get pod -A | awk 'NR!=1 {print $4}' | grep -v 'Running' | wc -l)
-         echo "Number of bad pods = $bad"
+         echo "FALL=$(kubectl get pods -A | awk 'NR!=1 {print $4}' | grep -v 'Running' | wc -l)" >> $env:GITHUB_OUTPUT
+    - name: check
+      id: check
+      run: |
+         bad=$(echo ${{ steps.connect.outputs.FALL }})
          if [[ $bad -eq 0 ]]
          then
          echo "FAILED=FALSE" >> "$GITHUB_OUTPUT"
