@@ -7,13 +7,13 @@ jobs:
   runs-on: ubuntu-latest
   outputs:
    bads: ${{ steps.check.outputs.FAILED }}
-   fall: ${{ steps.connect.outputs.FALL }}
+   fall: ${{ steps.connect.outputs.FILL }}
   steps:
     - uses: actions/checkout@v2
     - name: connect via proxy and execute commands
       id: connect
       env:
-       fall: ${{ steps.connect.outputs.FALL }}
+       fall: ${{ steps.connect.outputs.FILL }}
       uses: appleboy/ssh-action@v1.1.0
       with:
         proxy_host: ${{ secrets.PROXY_IP }}
@@ -26,19 +26,21 @@ jobs:
         password: ${{ secrets.CLUSTER_PASS }}
         script: |
          kubectl get pods -A > output.log
-         echo "FALL=$(kubectl get pods -A | awk 'NR!=1 {print $4}' | grep -v 'Running' | wc -l)" >> "$GITHUB_OUTPUT"
+         echo "FALL=$(kubectl get pods -A | awk 'NR!=1 {print $4}' | grep -v 'Running' | wc -l)"
+         FILL="$(kubectl get pods -A | awk 'NR!=1 {print $4}' | grep -v 'Running' | wc -l)"
+         echo "FILL=$FILL" >> "$env:GITHUB_ENV"
     - name: check
       id: check
       env:
-       fall: ${{ steps.connect.outputs.FALL }}
+       fall: ${{ steps.connect.outputs.FILL }}
        bads: ${{ steps.check.outputs.FAILED }}
       run: |
-         bad=$(echo "$fall")
+         bad=$(echo "${{ env.fall }}")
          if [[ $bad -eq 0 ]]
          then
-         echo "FAILED=FALSE" >> "$GITHUB_OUTPUT"
+         echo "FAILED=FALSE" > "$GITHUB_OUTPUT"
          else
-         echo "FAILED=TRUE" >> "$GITHUB_OUTPUT"
+         echo "FAILED=TRUE" > "$GITHUB_OUTPUT"
          fi
  check:
   runs-on: ubuntu-latest
