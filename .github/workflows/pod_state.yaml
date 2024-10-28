@@ -5,15 +5,10 @@ on: [push , workflow_dispatch]
 jobs:
  check-pod-status:
   runs-on: ubuntu-latest
-  outputs:
-   bads: ${{ steps.check.outputs.FAILED }}
-   fall: ${{ steps.connect.outputs.FILL }}
   steps:
     - uses: actions/checkout@v2
     - name: connect via proxy and execute commands
       id: connect
-      env:
-       fall: ${{ steps.connect.outputs.FILL }}
       uses: appleboy/ssh-action@v1.1.0
       with:
         proxy_host: ${{ secrets.PROXY_IP }}
@@ -26,34 +21,51 @@ jobs:
         password: ${{ secrets.CLUSTER_PASS }}
         script: |
          kubectl get pods -A > output.log
-         echo "FALL=$(kubectl get pods -A | awk 'NR!=1 {print $4}' | grep -v 'Running' | wc -l)"
-         FILL="$(kubectl get pods -A | awk 'NR!=1 {print $4}' | grep -v 'Running' | wc -l)"
-         echo "FILL=$FILL" >> "$env:GITHUB_ENV"
-    - name: check
-      id: check
-      env:
-       fall: ${{ steps.connect.outputs.FILL }}
-       bads: ${{ steps.check.outputs.FAILED }}
-      run: |
-         bad=$(echo "${{ env.fall }}")
-         if [[ $bad -eq 0 ]]
-         then
-         echo "FAILED=FALSE" > "$GITHUB_OUTPUT"
-         else
-         echo "FAILED=TRUE" > "$GITHUB_OUTPUT"
-         fi
+         bad="$(kubectl get pods -A | awk 'NR!=1 {print $4}' | grep -v 'Running' | wc -l)"
+         echo $bad > bad.log
+
  check:
-  runs-on: ubuntu-latest
-  needs: check-pod-status
-  steps:
-   - env:
-      out1: ${{ needs.check-pod-status.outputs.bads }}
-     run: echo "$out1"
+    needs: check-pod-status
+    name: Check result
+    runs-on: ubuntu-latest
+    outputs:
+      bads: ${{ steps.check.outputs.FAILED }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@master
+
+      - name: Download file via SSH
+        uses: nicklasfrahm/scp-action@main
+        with:
+          direction: download
+          host:  ${{ secrets.CLUSTER_IP }}
+          port: ${{ secrets.CLUSTER_PORT }}
+          username: ${{ secrets.CLUSTER_USER }}
+          insecure_password: ${{ secrets.CLUSTER_PASS }}
+          insecure_ignore_fingerprint: true
+          proxy_host: ${{ secrets.PROXY_IP }}
+          proxy_port: ${{ secrets.PROXY_PORT }}
+          proxy_fingerprint: true
+          proxy_username: ${{ secrets.PROXY_USER }}
+          insecure_proxy_password: ${{ secrets.PROXY_PASS }}
+          insecure_proxy_ignore_fingerprint: true
+          source: "/root/bad.log"
+          target: "./bad.log"
+      - name: Check file
+        id: check
+        run: |
+          bad=$(cat "./bad.log")
+          if [[ $bad -eq 0 ]]
+          then
+            echo "FAILED=FALSE" >> $GITHUB_OUTPUT
+          else
+            echo "FAILED=TRUE" >> $GITHUB_OUTPUT
+          fi
 
  notification:
-    needs: check-pod-status
+    needs: check
     runs-on: ubuntu-latest
-    if: needs.check-pod-status.outputs.bads == 'TRUE'
+    if: needs.check.outputs.bads == 'TRUE'
     steps:
     - name: Slack Notification
       uses: rtCamp/action-slack-notify@v2
